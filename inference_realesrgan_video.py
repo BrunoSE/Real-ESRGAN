@@ -269,7 +269,9 @@ def inference_video(args, video_save_path, device=None, total_workers=1, worker_
         else:
             writer.write_frame(output)
 
-        torch.cuda.synchronize(device)
+        # Synchronize only if using CUDA
+        if device is not None and device.type == 'cuda':
+            torch.cuda.synchronize(device)
         pbar.update(1)
 
     reader.close()

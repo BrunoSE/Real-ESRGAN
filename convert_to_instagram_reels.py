@@ -98,8 +98,19 @@ def calculate_scaling_strategy(width, height):
         'needs_crop': False,
         'needs_pad': False,
         'target_width': INSTAGRAM_WIDTH,
-        'target_height': INSTAGRAM_HEIGHT
+        'target_height': INSTAGRAM_HEIGHT,
+        'upscale_factor': 1.0
     }
+
+    # Calculate optimal upscale factor if upscaling is needed
+    if strategy['needs_upscale']:
+        # Calculate scale factor based on the dimension that needs more scaling
+        width_scale = INSTAGRAM_WIDTH / width
+        height_scale = INSTAGRAM_HEIGHT / height
+        # Use the larger scale to ensure we meet minimum dimensions
+        strategy['upscale_factor'] = max(width_scale, height_scale)
+        # Round to 1 decimal place for practical purposes
+        strategy['upscale_factor'] = round(strategy['upscale_factor'], 1)
 
     # Check if aspect ratio matches
     if abs(current_aspect - target_aspect) > 0.01:
@@ -116,15 +127,16 @@ def calculate_scaling_strategy(width, height):
     return strategy
 
 
-def upscale_with_realesrgan(input_path, output_path, model='realesr-general-x4v3'):
-    """Upscale video using Real-ESRGAN"""
-    print(f"  {Colors.BLUE}Upscaling with Real-ESRGAN ({model})...{Colors.END}")
+def upscale_with_realesrgan(input_path, output_path, scale_factor=4.0, model='realesr-general-x4v3'):
+    """Upscale video using Real-ESRGAN with calculated scale factor"""
+    print(f"  {Colors.BLUE}Upscaling with Real-ESRGAN ({model}, {scale_factor}x)...{Colors.END}")
 
     cmd = [
         'python', 'inference_realesrgan_video.py',
         '-i', input_path,
         '-o', os.path.dirname(output_path),
         '-n', model,
+        '-s', str(scale_factor),  # Use calculated scale factor
         '--suffix', 'upscaled'
     ]
 
@@ -230,13 +242,13 @@ def process_video(input_path, output_dir, use_upscaling=True, model='realesr-gen
 
     if strategy['needs_upscale'] and use_upscaling:
         # Need AI upscaling
-        print(f"  {Colors.YELLOW}→ AI Upscaling required{Colors.END}")
+        print(f"  {Colors.YELLOW}→ AI Upscaling required (scale: {strategy['upscale_factor']}x){Colors.END}")
 
         temp_dir = os.path.join(output_dir, '.temp')
         os.makedirs(temp_dir, exist_ok=True)
 
-        # Upscale with Real-ESRGAN
-        if not upscale_with_realesrgan(input_path, temp_dir, model):
+        # Upscale with Real-ESRGAN using calculated scale factor
+        if not upscale_with_realesrgan(input_path, temp_dir, strategy['upscale_factor'], model):
             print(f"{Colors.RED}✗ Upscaling failed, falling back to ffmpeg{Colors.END}")
             # Fall through to ffmpeg conversion
         else:

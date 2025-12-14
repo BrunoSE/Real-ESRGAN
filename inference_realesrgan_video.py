@@ -269,7 +269,8 @@ def inference_video(args, video_save_path, device=None, total_workers=1, worker_
         else:
             writer.write_frame(output)
 
-        torch.cuda.synchronize(device)
+        if device is not None and device.type == 'cuda':
+            torch.cuda.synchronize(device)
         pbar.update(1)
 
     reader.close()
@@ -286,10 +287,25 @@ def run(args):
         os.system(f'ffmpeg -i {args.input} -qscale:v 1 -qmin 1 -qmax 1 -vsync 0  {tmp_frames_folder}/frame%08d.png')
         args.input = tmp_frames_folder
 
-    num_gpus = torch.cuda.device_count()
+    # Check for available accelerators (CUDA or MPS)
+    if torch.cuda.is_available():
+        num_gpus = torch.cuda.device_count()
+        device = None  # Will use CUDA devices
+
+    elif torch.backends.mps.is_available():
+        # MPS (Apple Silicon) - use single process
+        print('Using MPS (Apple Silicon GPU) for acceleration')
+        inference_video(args, video_save_path, device=torch.device('mps'))
+        return
+
+    else:
+        num_gpus = 1  # Use CPU
+        device = torch.device('cpu')
+
     num_process = num_gpus * args.num_process_per_gpu
+
     if num_process == 1:
-        inference_video(args, video_save_path)
+        inference_video(args, video_save_path, device=device)
         return
 
     ctx = torch.multiprocessing.get_context('spawn')

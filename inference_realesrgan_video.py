@@ -302,6 +302,7 @@ def run(args):
         device = torch.device('cpu')
 
     num_process = num_gpus * args.num_process_per_gpu
+
     if num_process == 1:
         inference_video(args, video_save_path, device=device)
         return

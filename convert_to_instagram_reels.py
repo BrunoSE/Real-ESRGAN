@@ -197,13 +197,20 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
         crop_filter = f"crop={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}"
         filters.append(crop_filter)
 
-        # Adjust FPS only if current fps is below 30
-        # If fps is 30 or higher, keep the original higher framerate
-        if adjust_fps and current_fps < INSTAGRAM_FPS:
-            filters.append(f"fps={INSTAGRAM_FPS}")
-            print(f"  {Colors.YELLOW}→ Upsampling fps from {current_fps:.1f} to {INSTAGRAM_FPS}{Colors.END}")
-        elif current_fps >= INSTAGRAM_FPS:
-            print(f"  {Colors.GREEN}→ Keeping original fps: {current_fps:.1f}{Colors.END}")
+        # Adjust FPS based on Instagram's requirements
+        # Instagram Reels: min 30fps, max 60fps
+        if adjust_fps:
+            if current_fps < INSTAGRAM_FPS:
+                # Upsample low fps to 30
+                filters.append(f"fps={INSTAGRAM_FPS}")
+                print(f"  {Colors.YELLOW}→ Upsampling fps from {current_fps:.1f} to {INSTAGRAM_FPS}{Colors.END}")
+            elif current_fps > 60:
+                # Downsample very high fps to 60 (Instagram max)
+                filters.append(f"fps=60")
+                print(f"  {Colors.YELLOW}→ Downsampling fps from {current_fps:.1f} to 60 (Instagram max){Colors.END}")
+            else:
+                # Keep fps between 30-60
+                print(f"  {Colors.GREEN}→ Keeping original fps: {current_fps:.1f}{Colors.END}")
 
         filter_chain = ','.join(filters)
 

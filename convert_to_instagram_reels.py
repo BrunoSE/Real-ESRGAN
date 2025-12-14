@@ -163,16 +163,29 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
     print(f"  {Colors.BLUE}Converting with ffmpeg...{Colors.END}")
 
     try:
+        # Get current video dimensions
+        probe = ffmpeg.probe(input_path)
+        video_stream = next(s for s in probe['streams'] if s['codec_type'] == 'video')
+        current_width = int(video_stream['width'])
+        current_height = int(video_stream['height'])
+
         # Build ffmpeg filter chain
         filters = []
 
-        # Scale and crop to exact 1080x1920
-        # Strategy: scale so video covers entire frame, then crop excess
-        # This ensures no black bars/padding
+        # Calculate explicit scale factors for both dimensions
+        width_scale = INSTAGRAM_WIDTH / current_width
+        height_scale = INSTAGRAM_HEIGHT / current_height
 
-        # Scale so the smaller dimension fits exactly, keeping aspect ratio
-        # This makes the video slightly larger than needed
-        scale_filter = f"scale={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}:force_original_aspect_ratio=increase"
+        # Use the MAXIMUM scale factor (minimum scale-down)
+        # This ensures both dimensions are >= target, then we crop excess
+        scale_factor = max(width_scale, height_scale)
+
+        # Calculate scaled dimensions
+        scaled_width = int(current_width * scale_factor)
+        scaled_height = int(current_height * scale_factor)
+
+        # Scale to calculated dimensions (both will be >= target)
+        scale_filter = f"scale={scaled_width}:{scaled_height}"
         filters.append(scale_filter)
 
         # Crop to exact size (removes any excess, centers the crop)

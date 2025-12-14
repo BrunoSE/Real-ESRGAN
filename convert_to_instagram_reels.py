@@ -166,16 +166,18 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
         # Build ffmpeg filter chain
         filters = []
 
-        # Scale to target resolution while maintaining aspect ratio
-        # We'll use scale and crop/pad to get exact 1080x1920
+        # Scale and crop to exact 1080x1920
+        # Strategy: scale so video covers entire frame, then crop excess
+        # This ensures no black bars/padding
 
-        # First, scale to fit within bounds
-        scale_filter = f"scale='min({INSTAGRAM_WIDTH},iw)':'min({INSTAGRAM_HEIGHT},ih)':force_original_aspect_ratio=decrease"
+        # Scale so the smaller dimension fits exactly, keeping aspect ratio
+        # This makes the video slightly larger than needed
+        scale_filter = f"scale={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}:force_original_aspect_ratio=increase"
         filters.append(scale_filter)
 
-        # Then pad to exact size (centers the video)
-        pad_filter = f"pad={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
-        filters.append(pad_filter)
+        # Crop to exact size (removes any excess, centers the crop)
+        crop_filter = f"crop={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}"
+        filters.append(crop_filter)
 
         # Adjust FPS if needed
         if adjust_fps:

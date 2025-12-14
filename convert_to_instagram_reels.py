@@ -163,11 +163,16 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
     print(f"  {Colors.BLUE}Converting with ffmpeg...{Colors.END}")
 
     try:
-        # Get current video dimensions
+        # Get current video dimensions and fps
         probe = ffmpeg.probe(input_path)
         video_stream = next(s for s in probe['streams'] if s['codec_type'] == 'video')
         current_width = int(video_stream['width'])
         current_height = int(video_stream['height'])
+
+        # Get current FPS
+        fps_str = video_stream.get('r_frame_rate', '30/1')
+        fps_parts = fps_str.split('/')
+        current_fps = float(fps_parts[0]) / float(fps_parts[1]) if len(fps_parts) == 2 else 30
 
         # Build ffmpeg filter chain
         filters = []
@@ -192,9 +197,13 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
         crop_filter = f"crop={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}"
         filters.append(crop_filter)
 
-        # Adjust FPS if needed
-        if adjust_fps:
+        # Adjust FPS only if current fps is below 30
+        # If fps is 30 or higher, keep the original higher framerate
+        if adjust_fps and current_fps < INSTAGRAM_FPS:
             filters.append(f"fps={INSTAGRAM_FPS}")
+            print(f"  {Colors.YELLOW}→ Upsampling fps from {current_fps:.1f} to {INSTAGRAM_FPS}{Colors.END}")
+        elif current_fps >= INSTAGRAM_FPS:
+            print(f"  {Colors.GREEN}→ Keeping original fps: {current_fps:.1f}{Colors.END}")
 
         filter_chain = ','.join(filters)
 

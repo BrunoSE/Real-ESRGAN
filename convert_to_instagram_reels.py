@@ -144,9 +144,10 @@ def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='rea
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # Don't capture output - let Real-ESRGAN progress show in real-time
+        result = subprocess.run(cmd)
         if result.returncode != 0:
-            print(f"{Colors.RED}Upscaling failed: {result.stderr}{Colors.END}")
+            print(f"{Colors.RED}Upscaling failed (exit code: {result.returncode}){Colors.END}")
             return False
         return True
     except Exception as e:

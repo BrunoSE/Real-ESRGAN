@@ -109,6 +109,8 @@ def calculate_scaling_strategy(width, height):
         height_scale = INSTAGRAM_HEIGHT / height
         # Use the larger scale to ensure we meet minimum dimensions
         strategy['upscale_factor'] = max(width_scale, height_scale)
+        # Cap at 4x (Real-ESRGAN maximum)
+        strategy['upscale_factor'] = min(strategy['upscale_factor'], 4.0)
         # Round to 1 decimal place for practical purposes
         strategy['upscale_factor'] = round(strategy['upscale_factor'], 1)
 

@@ -20,6 +20,7 @@ Features:
 import argparse
 import glob
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -129,14 +130,14 @@ def calculate_scaling_strategy(width, height):
     return strategy
 
 
-def upscale_with_realesrgan(input_path, output_path, scale_factor=4.0, model='realesr-general-x4v3'):
+def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='realesr-general-x4v3'):
     """Upscale video using Real-ESRGAN with calculated scale factor"""
     print(f"  {Colors.BLUE}Upscaling with Real-ESRGAN ({model}, {scale_factor}x)...{Colors.END}")
 
     cmd = [
         'python', 'inference_realesrgan_video.py',
         '-i', input_path,
-        '-o', os.path.dirname(output_path),
+        '-o', output_dir,  # Use output_dir directly, no dirname needed
         '-n', model,
         '-s', str(scale_factor),  # Use calculated scale factor
         '--suffix', 'upscaled'
@@ -272,9 +273,10 @@ def process_video(input_path, output_dir, use_upscaling=True, model='realesr-gen
         audio=info['has_audio']
     )
 
-    # Cleanup temp files
-    if temp_upscaled and os.path.exists(temp_upscaled):
-        os.remove(temp_upscaled)
+    # Cleanup temp directory
+    temp_dir = os.path.join(output_dir, '.temp')
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
 
     if success:
         print(f"{Colors.GREEN}✓ Saved: {output_path}{Colors.END}")

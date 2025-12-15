@@ -130,9 +130,10 @@ def calculate_scaling_strategy(width, height):
     return strategy
 
 
-def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='realesr-general-x4v3', tile_size=400):
+def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='realesr-general-x4v3', tile_size=0):
     """Upscale video using Real-ESRGAN with calculated scale factor"""
-    print(f"  {Colors.BLUE}Upscaling with Real-ESRGAN ({model}, {scale_factor}x, tile={tile_size})...{Colors.END}")
+    tile_msg = f"tile={tile_size}" if tile_size > 0 else "no tiling"
+    print(f"  {Colors.BLUE}Upscaling with Real-ESRGAN ({model}, {scale_factor}x, {tile_msg})...{Colors.END}")
 
     cmd = [
         'python', 'inference_realesrgan_video.py',
@@ -140,10 +141,13 @@ def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='rea
         '-o', output_dir,  # Use output_dir directly, no dirname needed
         '-n', model,
         '-s', str(scale_factor),  # Use calculated scale factor
-        '--tile', str(tile_size),  # Tile size for memory management
         '--fp32',  # Use full precision (better for Apple Silicon MPS)
         '--suffix', 'upscaled'
     ]
+
+    # Only add tile argument if tiling is enabled
+    if tile_size > 0:
+        cmd.extend(['--tile', str(tile_size)])
 
     try:
         # Don't capture output - let Real-ESRGAN progress show in real-time
@@ -247,7 +251,7 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
         return False
 
 
-def process_video(input_path, output_dir, use_upscaling=True, model='realesr-general-x4v3', tile_size=400):
+def process_video(input_path, output_dir, use_upscaling=True, model='realesr-general-x4v3', tile_size=0):
     """
     Process a single video to Instagram Reels specs.
 
@@ -374,8 +378,8 @@ Examples:
     parser.add_argument(
         '--tile',
         type=int,
-        default=400,
-        help='Tile size for Real-ESRGAN (default: 400, use 0 for no tiling, larger for more VRAM)'
+        default=0,
+        help='Tile size for Real-ESRGAN (default: 0=no tiling for best quality, use 512+ if OOM errors occur)'
     )
 
     args = parser.parse_args()
@@ -403,7 +407,8 @@ Examples:
     print(f"AI Upscaling: {'Enabled' if not args.no_upscale else 'Disabled'}")
     if not args.no_upscale:
         print(f"Upscale Model: {args.model_name}")
-        print(f"Tile Size: {args.tile} (fp32 precision)")
+        tile_info = f"no tiling (best quality)" if args.tile == 0 else f"tile={args.tile}"
+        print(f"Settings: {tile_info}, fp32 precision")
 
     # Process each video
     success_count = 0

@@ -75,7 +75,14 @@ class RealESRGANer():
             model.load_state_dict(loadnet[keyname], strict=True)
         else:
             # Load state dict directly for custom models
-            model.load_state_dict(loadnet, strict=True)
+            # Use strict=False for custom models that may have different architectures
+            try:
+                model.load_state_dict(loadnet, strict=True)
+            except RuntimeError as e:
+                # If strict loading fails, try with strict=False
+                print(f'Warning: Model architecture mismatch. Loading with strict=False...')
+                print(f'Original error: {str(e)[:200]}...')
+                model.load_state_dict(loadnet, strict=False)
 
         model.eval()
         self.model = model.to(self.device)

@@ -200,6 +200,19 @@ def inference_video(args, video_save_path, device=None, total_workers=1, worker_
             'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-wdn-x4v3.pth',
             'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth'
         ]
+    else:
+        # Unknown/custom model - try to infer scale from model name
+        import re
+        scale_match = re.search(r'(\d+)x', args.model_name.lower())
+        if scale_match:
+            netscale = int(scale_match.group(1))
+        else:
+            netscale = 4  # Default to 4x if can't determine
+
+        # Use default RRDBNet architecture for custom models
+        model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=netscale)
+        file_url = []  # Custom model already exists in weights folder
+        print(f'Using custom model: {args.model_name} (assumed {netscale}x scale)')
 
     # ---------------------- determine model paths ---------------------- #
     model_path = os.path.join('weights', args.model_name + '.pth')

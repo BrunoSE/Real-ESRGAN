@@ -130,9 +130,9 @@ def calculate_scaling_strategy(width, height):
     return strategy
 
 
-def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='realesr-general-x4v3'):
+def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='realesr-general-x4v3', tile_size=400):
     """Upscale video using Real-ESRGAN with calculated scale factor"""
-    print(f"  {Colors.BLUE}Upscaling with Real-ESRGAN ({model}, {scale_factor}x)...{Colors.END}")
+    print(f"  {Colors.BLUE}Upscaling with Real-ESRGAN ({model}, {scale_factor}x, tile={tile_size})...{Colors.END}")
 
     cmd = [
         'python', 'inference_realesrgan_video.py',
@@ -140,6 +140,8 @@ def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='rea
         '-o', output_dir,  # Use output_dir directly, no dirname needed
         '-n', model,
         '-s', str(scale_factor),  # Use calculated scale factor
+        '--tile', str(tile_size),  # Tile size for memory management
+        '--fp32',  # Use full precision (better for Apple Silicon MPS)
         '--suffix', 'upscaled'
     ]
 
@@ -245,7 +247,7 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
         return False
 
 
-def process_video(input_path, output_dir, use_upscaling=True, model='realesr-general-x4v3'):
+def process_video(input_path, output_dir, use_upscaling=True, model='realesr-general-x4v3', tile_size=400):
     """
     Process a single video to Instagram Reels specs.
 
@@ -254,6 +256,7 @@ def process_video(input_path, output_dir, use_upscaling=True, model='realesr-gen
         output_dir: Directory for output video
         use_upscaling: Whether to use Real-ESRGAN for upscaling
         model: Real-ESRGAN model to use
+        tile_size: Tile size for Real-ESRGAN processing (memory management)
     """
     filename = os.path.basename(input_path)
     name_without_ext = os.path.splitext(filename)[0]
@@ -283,7 +286,7 @@ def process_video(input_path, output_dir, use_upscaling=True, model='realesr-gen
         os.makedirs(temp_dir, exist_ok=True)
 
         # Upscale with Real-ESRGAN using calculated scale factor
-        if not upscale_with_realesrgan(input_path, temp_dir, strategy['upscale_factor'], model):
+        if not upscale_with_realesrgan(input_path, temp_dir, strategy['upscale_factor'], model, tile_size):
             print(f"{Colors.RED}✗ Upscaling failed, falling back to ffmpeg{Colors.END}")
             # Fall through to ffmpeg conversion
         else:
@@ -368,6 +371,12 @@ Examples:
         choices=['realesr-general-x4v3', 'realesr-animevideov3', 'RealESRGAN_x4plus', 'RealESRGAN_x2plus'],
         help='Real-ESRGAN model for upscaling (default: realesr-general-x4v3 for real videos)'
     )
+    parser.add_argument(
+        '--tile',
+        type=int,
+        default=400,
+        help='Tile size for Real-ESRGAN (default: 400, use 0 for no tiling, larger for more VRAM)'
+    )
 
     args = parser.parse_args()
 
@@ -394,11 +403,12 @@ Examples:
     print(f"AI Upscaling: {'Enabled' if not args.no_upscale else 'Disabled'}")
     if not args.no_upscale:
         print(f"Upscale Model: {args.model_name}")
+        print(f"Tile Size: {args.tile} (fp32 precision)")
 
     # Process each video
     success_count = 0
     for video_file in video_files:
-        if process_video(video_file, args.output, use_upscaling=not args.no_upscale, model=args.model_name):
+        if process_video(video_file, args.output, use_upscaling=not args.no_upscale, model=args.model_name, tile_size=args.tile):
             success_count += 1
 
     # Summary

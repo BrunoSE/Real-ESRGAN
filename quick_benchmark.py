@@ -13,8 +13,8 @@ import time
 
 # Models to test
 MODELS = [
-    'realesr-general-wdn-x4v3',
-    '4x_NMKD-Superscale-SP_178000_G'
+    '4x_NMKD-Superscale-SP_178000_G',
+    'realesr-general-wdn-x4v3'
 ]
 
 SCALE = 2.7

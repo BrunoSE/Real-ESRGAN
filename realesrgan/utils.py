@@ -65,9 +65,17 @@ class RealESRGANer():
         # prefer to use params_ema
         if 'params_ema' in loadnet:
             keyname = 'params_ema'
-        else:
+        elif 'params' in loadnet:
             keyname = 'params'
-        model.load_state_dict(loadnet[keyname], strict=True)
+        else:
+            # Custom models may not have params wrapper - use loadnet directly
+            keyname = None
+
+        if keyname is not None:
+            model.load_state_dict(loadnet[keyname], strict=True)
+        else:
+            # Load state dict directly for custom models
+            model.load_state_dict(loadnet, strict=True)
 
         model.eval()
         self.model = model.to(self.device)

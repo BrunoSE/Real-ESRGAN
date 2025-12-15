@@ -233,7 +233,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Benchmark all models in weights/ on all videos in inputs/
+  # Benchmark all models in weights/ on all videos in inputs/video/
   uv run python benchmark_models.py
 
   # Benchmark with custom scale factor
@@ -243,7 +243,7 @@ Examples:
   uv run python benchmark_models.py --tile 512
 
   # Benchmark specific videos
-  uv run python benchmark_models.py --input "inputs/video1.mp4" "inputs/video2.mp4"
+  uv run python benchmark_models.py --input "inputs/video/vid1.mp4" "inputs/video/vid2.mp4"
 
   # Use custom weights directory
   uv run python benchmark_models.py --weights-dir /path/to/models
@@ -253,8 +253,8 @@ Examples:
     parser.add_argument(
         '--input',
         nargs='+',
-        default=['inputs/*.mp4'],
-        help='Input video file(s) or pattern (default: inputs/*.mp4)'
+        default=['inputs/video/*.mp4'],
+        help='Input video file(s) or pattern (default: inputs/video/*.mp4)'
     )
     parser.add_argument(
         '--output',

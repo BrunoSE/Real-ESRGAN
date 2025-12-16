@@ -108,8 +108,16 @@ def calculate_scaling_strategy(width, height):
         # Calculate scale factor based on the dimension that needs more scaling
         width_scale = INSTAGRAM_WIDTH / width
         height_scale = INSTAGRAM_HEIGHT / height
-        # Use the larger scale to ensure we meet minimum dimensions
-        strategy['upscale_factor'] = max(width_scale, height_scale)
+
+        # For horizontal videos (width > height), only scale by width
+        # For vertical videos, use max scale to ensure both dimensions are covered
+        if width > height:
+            # Horizontal: scale by width only (will add black bars for height)
+            strategy['upscale_factor'] = width_scale
+        else:
+            # Vertical: use larger scale to ensure we meet minimum dimensions
+            strategy['upscale_factor'] = max(width_scale, height_scale)
+
         # Cap at 4x (Real-ESRGAN maximum)
         strategy['upscale_factor'] = min(strategy['upscale_factor'], 4.0)
         # Round to 1 decimal place for practical purposes
@@ -184,25 +192,48 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
         # Build ffmpeg filter chain
         filters = []
 
-        # Calculate explicit scale factors for both dimensions
-        width_scale = INSTAGRAM_WIDTH / current_width
-        height_scale = INSTAGRAM_HEIGHT / current_height
+        # Detect horizontal vs vertical videos
+        is_horizontal = current_width > current_height
 
-        # Use the MAXIMUM scale factor (minimum scale-down)
-        # This ensures both dimensions are >= target, then we crop excess
-        scale_factor = max(width_scale, height_scale)
+        if is_horizontal:
+            # Horizontal video: scale by width, then add black bars (letterbox)
+            # Scale so width reaches 1080
+            scale_factor = INSTAGRAM_WIDTH / current_width
+            scaled_width = INSTAGRAM_WIDTH
+            scaled_height = int(current_height * scale_factor)
 
-        # Calculate scaled dimensions
-        scaled_width = int(current_width * scale_factor)
-        scaled_height = int(current_height * scale_factor)
+            # Scale to target width
+            scale_filter = f"scale={scaled_width}:{scaled_height}"
+            filters.append(scale_filter)
 
-        # Scale to calculated dimensions (both will be >= target)
-        scale_filter = f"scale={scaled_width}:{scaled_height}"
-        filters.append(scale_filter)
+            # Pad height with black bars on top/bottom to reach 1920
+            pad_filter = f"pad={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
+            filters.append(pad_filter)
 
-        # Crop to exact size (removes any excess, centers the crop)
-        crop_filter = f"crop={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}"
-        filters.append(crop_filter)
+            print(f"  {Colors.YELLOW}→ Horizontal video: scaling to {scaled_width}x{scaled_height}, adding letterboxing{Colors.END}")
+        else:
+            # Vertical video: scale and crop (original behavior)
+            # Calculate explicit scale factors for both dimensions
+            width_scale = INSTAGRAM_WIDTH / current_width
+            height_scale = INSTAGRAM_HEIGHT / current_height
+
+            # Use the MAXIMUM scale factor (minimum scale-down)
+            # This ensures both dimensions are >= target, then we crop excess
+            scale_factor = max(width_scale, height_scale)
+
+            # Calculate scaled dimensions
+            scaled_width = int(current_width * scale_factor)
+            scaled_height = int(current_height * scale_factor)
+
+            # Scale to calculated dimensions (both will be >= target)
+            scale_filter = f"scale={scaled_width}:{scaled_height}"
+            filters.append(scale_filter)
+
+            # Crop to exact size (removes any excess, centers the crop)
+            crop_filter = f"crop={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}"
+            filters.append(crop_filter)
+
+            print(f"  {Colors.YELLOW}→ Vertical video: scaling to {scaled_width}x{scaled_height}, cropping to fit{Colors.END}")
 
         # Adjust FPS based on Instagram's requirements
         # Instagram Reels: min 30fps, max 60fps

@@ -130,17 +130,17 @@ Examples:
   # Default: uses inputs/music/top_2026.mp3
   uv run python add_music_to_video.py results/*.mp4 -o final/
 
+  # Cleanup: delete from results/ folder after adding music
+  uv run python add_music_to_video.py results/*.mp4 -o final/ --cleanup
+
+  # Full cleanup: also delete original files from inputs/video/
+  uv run python add_music_to_video.py results/*.mp4 -o final/ --cleanup --cleanup-inputs
+
   # Use a different file from inputs/music/ folder
   uv run python add_music_to_video.py results/*.mp4 -o final/ -m other_song.mp3
 
-  # Single video
-  uv run python add_music_to_video.py results/video_instagram.mp4 -o final/
-
   # No fade in/out
   uv run python add_music_to_video.py results/*.mp4 -o final/ --no-fade
-
-  # Longer fade (2 seconds)
-  uv run python add_music_to_video.py results/*.mp4 -o final/ --fade 2.0
         """
     )
 
@@ -177,6 +177,16 @@ Examples:
         type=str,
         default='_music',
         help='Suffix for output files when output is a directory (default: _music)'
+    )
+    parser.add_argument(
+        '--cleanup',
+        action='store_true',
+        help='Delete source videos from results/ after successfully adding music'
+    )
+    parser.add_argument(
+        '--cleanup-inputs',
+        action='store_true',
+        help='Also delete original videos from inputs/video/ (requires --cleanup)'
     )
 
     args = parser.parse_args()
@@ -228,6 +238,11 @@ Examples:
     print(f"Music: {args.music}")
     if fade_duration > 0:
         print(f"Fade: {fade_duration}s in/out")
+    if args.cleanup:
+        cleanup_msg = "results/ folder"
+        if args.cleanup_inputs:
+            cleanup_msg += " + inputs/video/ folder"
+        print(f"{Colors.YELLOW}Cleanup: will delete originals from {cleanup_msg}{Colors.END}")
     print()
 
     # Process videos
@@ -246,8 +261,30 @@ Examples:
         print(f"{Colors.BOLD}[{i}/{len(video_files)}] {filename}{Colors.END}")
 
         if add_random_music_section(video_file, args.music, output_path, fade_duration):
-            print(f"{Colors.GREEN}✓ Saved: {output_path}{Colors.END}\n")
+            print(f"{Colors.GREEN}✓ Saved: {output_path}{Colors.END}")
             success_count += 1
+
+            # Cleanup source files if requested
+            if args.cleanup:
+                try:
+                    # Delete the video from results/ folder
+                    os.remove(video_file)
+                    print(f"{Colors.YELLOW}  🗑️  Deleted: {video_file}{Colors.END}")
+
+                    # Also delete from inputs/video/ if requested
+                    if args.cleanup_inputs:
+                        # Try to find original file in inputs/video/
+                        # Strip _instagram suffix from filename to match original
+                        original_name = name_without_ext.replace('_instagram', '')
+                        input_video_path = os.path.join('inputs/video', f"{original_name}.mp4")
+
+                        if os.path.isfile(input_video_path):
+                            os.remove(input_video_path)
+                            print(f"{Colors.YELLOW}  🗑️  Deleted: {input_video_path}{Colors.END}")
+                except Exception as e:
+                    print(f"{Colors.RED}  ⚠️  Cleanup error: {e}{Colors.END}")
+
+            print()  # Blank line after each video
         else:
             print(f"{Colors.RED}✗ Failed{Colors.END}\n")
 

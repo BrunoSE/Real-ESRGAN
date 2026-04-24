@@ -21,6 +21,10 @@ except ImportError:
     sys.exit(1)
 
 
+MUSIC_DIR = 'inputs/music'
+DEFAULT_MUSIC = 'inputs/music/top_2026.mp3'
+
+
 class Colors:
     """ANSI color codes"""
     GREEN = '\033[92m'
@@ -123,20 +127,20 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Auto-select random music from inputs/music/
-  python add_music_to_video.py results/*.mp4 -o final/
+  # Default: uses inputs/music/top_2026.mp3
+  uv run python add_music_to_video.py results/*.mp4 -o final/
 
-  # Specify a particular music file
-  python add_music_to_video.py video.mp4 -m music/song.mp3 -o output.mp4
+  # Use a different file from inputs/music/ folder
+  uv run python add_music_to_video.py results/*.mp4 -o final/ -m other_song.mp3
 
-  # Process all videos (each gets different random section from auto-selected music)
-  python add_music_to_video.py results/*.mp4 -o music_videos/
+  # Single video
+  uv run python add_music_to_video.py results/video_instagram.mp4 -o final/
 
   # No fade in/out
-  python add_music_to_video.py video.mp4 -o output.mp4 --no-fade
+  uv run python add_music_to_video.py results/*.mp4 -o final/ --no-fade
 
-  # Custom fade duration (2 seconds)
-  python add_music_to_video.py video.mp4 -m song.mp3 -o output.mp4 --fade 2.0
+  # Longer fade (2 seconds)
+  uv run python add_music_to_video.py results/*.mp4 -o final/ --fade 2.0
         """
     )
 
@@ -149,7 +153,7 @@ Examples:
         '-m', '--music',
         type=str,
         default=None,
-        help='Music file (mp3, wav, etc.). If not specified, randomly selects from inputs/music/'
+        help=f'Music filename from inputs/music/ (default: top_2026.mp3). E.g. -m other_song.mp3'
     )
     parser.add_argument(
         '-o', '--output',
@@ -177,34 +181,21 @@ Examples:
 
     args = parser.parse_args()
 
-    # Handle music file selection
+    # Resolve music file path - always looks in MUSIC_DIR
     if args.music is None:
-        # Auto-select random music from inputs/music/
-        music_dir = 'inputs/music'
-        if not os.path.isdir(music_dir):
-            print(f"{Colors.RED}Error: Music directory not found: {music_dir}{Colors.END}")
-            print(f"{Colors.YELLOW}Create the directory and add music files, or use -m to specify a music file{Colors.END}")
-            return 1
+        music_path = DEFAULT_MUSIC
+    else:
+        # Assume filename is in MUSIC_DIR (strip any dir prefix the user may have included)
+        music_path = os.path.join(MUSIC_DIR, os.path.basename(args.music))
 
-        # Find all music files
-        music_extensions = ['*.mp3', '*.wav', '*.m4a', '*.aac', '*.flac', '*.ogg']
-        music_files = []
-        for ext in music_extensions:
-            music_files.extend(glob.glob(os.path.join(music_dir, ext)))
+    print(f"{Colors.BLUE}Using music: {music_path}{Colors.END}\n")
 
-        if not music_files:
-            print(f"{Colors.RED}Error: No music files found in {music_dir}/{Colors.END}")
-            print(f"{Colors.YELLOW}Add music files (.mp3, .wav, etc.) to {music_dir}/, or use -m to specify a file{Colors.END}")
-            return 1
-
-        # Randomly select a music file
-        args.music = random.choice(music_files)
-        print(f"{Colors.BLUE}🎵 Auto-selected music: {os.path.basename(args.music)}{Colors.END}\n")
-
-    # Check music file exists
-    if not os.path.isfile(args.music):
-        print(f"{Colors.RED}Error: Music file not found: {args.music}{Colors.END}")
+    if not os.path.isfile(music_path):
+        print(f"{Colors.RED}Error: Music file not found: {music_path}{Colors.END}")
+        print(f"{Colors.YELLOW}Place your music files in {MUSIC_DIR}/{Colors.END}")
         return 1
+
+    args.music = music_path
 
     # Expand wildcards
     video_files = []

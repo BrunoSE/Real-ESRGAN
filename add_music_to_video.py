@@ -123,17 +123,20 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Add music to a single video
-  python add_music_to_video.py video.mp4 -m music.mp3 -o video_with_music.mp4
+  # Auto-select random music from inputs/music/
+  python add_music_to_video.py results/*.mp4 -o final/
 
-  # Process all videos in a folder
-  python add_music_to_video.py results/*.mp4 -m music.mp3 -o music_videos/
+  # Specify a particular music file
+  python add_music_to_video.py video.mp4 -m music/song.mp3 -o output.mp4
+
+  # Process all videos (each gets different random section from auto-selected music)
+  python add_music_to_video.py results/*.mp4 -o music_videos/
 
   # No fade in/out
-  python add_music_to_video.py video.mp4 -m music.mp3 -o output.mp4 --no-fade
+  python add_music_to_video.py video.mp4 -o output.mp4 --no-fade
 
   # Custom fade duration (2 seconds)
-  python add_music_to_video.py video.mp4 -m music.mp3 -o output.mp4 --fade 2.0
+  python add_music_to_video.py video.mp4 -m song.mp3 -o output.mp4 --fade 2.0
         """
     )
 
@@ -145,8 +148,8 @@ Examples:
     parser.add_argument(
         '-m', '--music',
         type=str,
-        required=True,
-        help='Music file (mp3, wav, etc.)'
+        default=None,
+        help='Music file (mp3, wav, etc.). If not specified, randomly selects from inputs/music/'
     )
     parser.add_argument(
         '-o', '--output',
@@ -173,6 +176,30 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Handle music file selection
+    if args.music is None:
+        # Auto-select random music from inputs/music/
+        music_dir = 'inputs/music'
+        if not os.path.isdir(music_dir):
+            print(f"{Colors.RED}Error: Music directory not found: {music_dir}{Colors.END}")
+            print(f"{Colors.YELLOW}Create the directory and add music files, or use -m to specify a music file{Colors.END}")
+            return 1
+
+        # Find all music files
+        music_extensions = ['*.mp3', '*.wav', '*.m4a', '*.aac', '*.flac', '*.ogg']
+        music_files = []
+        for ext in music_extensions:
+            music_files.extend(glob.glob(os.path.join(music_dir, ext)))
+
+        if not music_files:
+            print(f"{Colors.RED}Error: No music files found in {music_dir}/{Colors.END}")
+            print(f"{Colors.YELLOW}Add music files (.mp3, .wav, etc.) to {music_dir}/, or use -m to specify a file{Colors.END}")
+            return 1
+
+        # Randomly select a music file
+        args.music = random.choice(music_files)
+        print(f"{Colors.BLUE}🎵 Auto-selected music: {os.path.basename(args.music)}{Colors.END}\n")
 
     # Check music file exists
     if not os.path.isfile(args.music):

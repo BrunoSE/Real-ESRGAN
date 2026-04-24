@@ -39,6 +39,14 @@ INSTAGRAM_HEIGHT = 1920
 INSTAGRAM_FPS = 30
 INSTAGRAM_ASPECT = 9 / 16  # width/height
 
+# Default Real-ESRGAN model for live-action video upscaling
+# RealESRGAN_x4plus: best quality for faces per research (GAN-trained)
+DEFAULT_MODEL = 'RealESRGAN_x4plus'
+
+# Always upscale at 4x and downscale with Lanczos for richer detail
+# (produces better results than direct smaller-factor upscaling)
+UPSCALE_FACTOR = 4.0
+
 
 class Colors:
     """ANSI color codes"""
@@ -103,25 +111,9 @@ def calculate_scaling_strategy(width, height):
         'upscale_factor': 1.0
     }
 
-    # Calculate optimal upscale factor if upscaling is needed
+    # Always upscale at 4x then downscale with Lanczos (better detail than direct scaling)
     if strategy['needs_upscale']:
-        # Calculate scale factor based on the dimension that needs more scaling
-        width_scale = INSTAGRAM_WIDTH / width
-        height_scale = INSTAGRAM_HEIGHT / height
-
-        # For horizontal videos (width > height), only scale by width
-        # For vertical videos, use max scale to ensure both dimensions are covered
-        if width > height:
-            # Horizontal: scale by width only (will add black bars for height)
-            strategy['upscale_factor'] = width_scale
-        else:
-            # Vertical: use larger scale to ensure we meet minimum dimensions
-            strategy['upscale_factor'] = max(width_scale, height_scale)
-
-        # Cap at 4x (Real-ESRGAN maximum)
-        strategy['upscale_factor'] = min(strategy['upscale_factor'], 4.0)
-        # Round to 1 decimal place for practical purposes
-        strategy['upscale_factor'] = round(strategy['upscale_factor'], 1)
+        strategy['upscale_factor'] = UPSCALE_FACTOR
 
     # Check if aspect ratio matches
     if abs(current_aspect - target_aspect) > 0.01:
@@ -138,7 +130,7 @@ def calculate_scaling_strategy(width, height):
     return strategy
 
 
-def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='realesr-general-x4v3', tile_size=0):
+def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model=DEFAULT_MODEL, tile_size=0):
     """Upscale video using Real-ESRGAN with calculated scale factor"""
     tile_msg = f"tile={tile_size}" if tile_size > 0 else "no tiling"
     print(f"  {Colors.BLUE}Upscaling with Real-ESRGAN ({model}, {scale_factor}x, {tile_msg})...{Colors.END}")
@@ -169,11 +161,16 @@ def upscale_with_realesrgan(input_path, output_dir, scale_factor=4.0, model='rea
         return False
 
 
-def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audio=True):
+def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audio=True, blur_bg=False):
     """
     Convert video to Instagram Reels specs using ffmpeg.
 
     Handles: resolution, aspect ratio, fps, codec conversion
+    Uses Lanczos for high-quality downscaling.
+
+    Args:
+        blur_bg: If True, horizontal videos use blurred-background fill
+                 instead of black letterbox bars
     """
     print(f"  {Colors.BLUE}Converting with ffmpeg...{Colors.END}")
 
@@ -189,44 +186,50 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
         fps_parts = fps_str.split('/')
         current_fps = float(fps_parts[0]) / float(fps_parts[1]) if len(fps_parts) == 2 else 30
 
-        # Build ffmpeg filter chain
-        filters = []
-
         # Detect horizontal vs vertical videos
         is_horizontal = current_width > current_height
 
+        # Build filter chain - use complex filter for blur-bg, simple filter otherwise
+        complex_filter = None
+        filters = []
+
         if is_horizontal:
-            # Horizontal video: scale by width, then add black bars (letterbox)
-            # Scale so width reaches 1080
+            # Horizontal video: scale by width
             scale_factor = INSTAGRAM_WIDTH / current_width
             scaled_width = INSTAGRAM_WIDTH
             scaled_height = int(current_height * scale_factor)
 
-            # Scale to target width
-            scale_filter = f"scale={scaled_width}:{scaled_height}"
-            filters.append(scale_filter)
-
-            # Pad height with black bars on top/bottom to reach 1920
-            pad_filter = f"pad={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
-            filters.append(pad_filter)
-
-            print(f"  {Colors.YELLOW}→ Horizontal video: scaling to {scaled_width}x{scaled_height}, adding letterboxing{Colors.END}")
+            if blur_bg:
+                # Blurred-background fill: popular Reels style
+                # Background: full-frame blurred and cropped to 1080x1920
+                # Foreground: scaled video centered on top
+                complex_filter = (
+                    f"[0:v]split[fg][bg];"
+                    f"[bg]scale={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,"
+                    f"crop={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT},boxblur=20[bg];"
+                    f"[fg]scale={scaled_width}:{scaled_height}:flags=lanczos[fg];"
+                    f"[bg][fg]overlay=(W-w)/2:(H-h)/2"
+                )
+                print(f"  {Colors.YELLOW}→ Horizontal video: scaling to {scaled_width}x{scaled_height} with blurred background{Colors.END}")
+            else:
+                # Black letterbox bars (default)
+                scale_filter = f"scale={scaled_width}:{scaled_height}:flags=lanczos"
+                filters.append(scale_filter)
+                pad_filter = f"pad={INSTAGRAM_WIDTH}:{INSTAGRAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
+                filters.append(pad_filter)
+                print(f"  {Colors.YELLOW}→ Horizontal video: scaling to {scaled_width}x{scaled_height}, adding letterboxing{Colors.END}")
         else:
-            # Vertical video: scale and crop (original behavior)
-            # Calculate explicit scale factors for both dimensions
+            # Vertical video: scale and crop
             width_scale = INSTAGRAM_WIDTH / current_width
             height_scale = INSTAGRAM_HEIGHT / current_height
 
-            # Use the MAXIMUM scale factor (minimum scale-down)
-            # This ensures both dimensions are >= target, then we crop excess
+            # Use the MAXIMUM scale factor to ensure both dimensions are covered
             scale_factor = max(width_scale, height_scale)
-
-            # Calculate scaled dimensions
             scaled_width = int(current_width * scale_factor)
             scaled_height = int(current_height * scale_factor)
 
-            # Scale to calculated dimensions (both will be >= target)
-            scale_filter = f"scale={scaled_width}:{scaled_height}"
+            # Scale with Lanczos for better quality
+            scale_filter = f"scale={scaled_width}:{scaled_height}:flags=lanczos"
             filters.append(scale_filter)
 
             # Crop to exact size (removes any excess, centers the crop)
@@ -235,43 +238,65 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
 
             print(f"  {Colors.YELLOW}→ Vertical video: scaling to {scaled_width}x{scaled_height}, cropping to fit{Colors.END}")
 
-        # Adjust FPS based on Instagram's requirements
-        # Instagram Reels: min 30fps, max 60fps
+        # Determine fps filter
+        fps_filter = None
         if adjust_fps:
             if current_fps < INSTAGRAM_FPS:
-                # Upsample low fps to 30
-                filters.append(f"fps={INSTAGRAM_FPS}")
+                fps_filter = f"fps={INSTAGRAM_FPS}"
                 print(f"  {Colors.YELLOW}→ Upsampling fps from {current_fps:.1f} to {INSTAGRAM_FPS}{Colors.END}")
             elif current_fps > 60:
-                # Downsample very high fps to 60 (Instagram max)
-                filters.append(f"fps=60")
+                fps_filter = "fps=60"
                 print(f"  {Colors.YELLOW}→ Downsampling fps from {current_fps:.1f} to 60 (Instagram max){Colors.END}")
             else:
-                # Keep fps between 30-60
                 print(f"  {Colors.GREEN}→ Keeping original fps: {current_fps:.1f}{Colors.END}")
 
-        filter_chain = ','.join(filters)
+        # Build ffmpeg command with research-recommended encoding settings
+        # CRF 18 + preset slow + faststart + maxrate 12M preserves detail through
+        # Instagram's re-encoding pipeline
+        cmd = ['ffmpeg', '-y', '-i', input_path]
 
-        # Build ffmpeg command
-        input_stream = ffmpeg.input(input_path)
+        if complex_filter is not None:
+            # Complex filter chain (blur-bg uses filter_complex)
+            if fps_filter:
+                complex_filter = f"{complex_filter},{fps_filter}"
+            cmd.extend(['-filter_complex', complex_filter])
+        else:
+            # Simple filter chain
+            if fps_filter:
+                filters.append(fps_filter)
+            filter_chain = ','.join(filters)
+            cmd.extend(['-vf', filter_chain])
 
-        output_kwargs = {
-            'vcodec': 'libx264',
-            'preset': 'medium',
-            'crf': 23,
-            'pix_fmt': 'yuv420p',
-            'vf': filter_chain
-        }
+        # Video encoding - research-recommended settings for Instagram Reels
+        cmd.extend([
+            '-c:v', 'libx264',
+            '-profile:v', 'main',
+            '-level:v', '4.0',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '18',
+            '-maxrate', '12M',
+            '-bufsize', '20M',
+            '-preset', 'slow',
+            '-movflags', '+faststart',
+        ])
 
-        # Add audio if present
+        # Audio encoding
         if audio:
-            output_kwargs['acodec'] = 'aac'
-            output_kwargs['audio_bitrate'] = '128k'
+            cmd.extend([
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                '-ar', '48000',
+            ])
+        else:
+            cmd.append('-an')
 
-        output_stream = ffmpeg.output(input_stream, output_path, **output_kwargs)
+        cmd.append(output_path)
 
         # Run ffmpeg
-        ffmpeg.run(output_stream, overwrite_output=True, quiet=True)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"{Colors.RED}FFmpeg error: {result.stderr[-500:]}{Colors.END}")
+            return False
         return True
 
     except ffmpeg.Error as e:
@@ -282,7 +307,7 @@ def convert_with_ffmpeg(input_path, output_path, strategy, adjust_fps=True, audi
         return False
 
 
-def process_video(input_path, output_dir, use_upscaling=True, model='realesr-general-x4v3', tile_size=0):
+def process_video(input_path, output_dir, use_upscaling=True, model=DEFAULT_MODEL, tile_size=0, blur_bg=False):
     """
     Process a single video to Instagram Reels specs.
 
@@ -292,6 +317,7 @@ def process_video(input_path, output_dir, use_upscaling=True, model='realesr-gen
         use_upscaling: Whether to use Real-ESRGAN for upscaling
         model: Real-ESRGAN model to use
         tile_size: Tile size for Real-ESRGAN processing (memory management)
+        blur_bg: For horizontal videos, use blurred-background fill instead of black bars
     """
     filename = os.path.basename(input_path)
     name_without_ext = os.path.splitext(filename)[0]
@@ -340,7 +366,8 @@ def process_video(input_path, output_dir, use_upscaling=True, model='realesr-gen
         output_path,
         strategy,
         adjust_fps=True,
-        audio=info['has_audio']
+        audio=info['has_audio'],
+        blur_bg=blur_bg
     )
 
     # Cleanup temp directory
@@ -369,14 +396,17 @@ Instagram Reels Target Specs:
   Codec:         H.264
 
 Examples:
-  # Convert all videos in inputs folder
+  # Convert all videos in inputs folder (default: RealESRGAN_x4plus, black bars for horizontal)
   uv run python convert_to_instagram_reels.py inputs/*.mp4 -o instagram_ready
+
+  # Use blurred-background fill for horizontal videos (popular Reels style)
+  uv run python convert_to_instagram_reels.py inputs/*.mp4 -o output --blur-bg
 
   # Convert without AI upscaling (faster)
   uv run python convert_to_instagram_reels.py inputs/*.mp4 -o output --no-upscale
 
-  # Use anime model for upscaling
-  uv run python convert_to_instagram_reels.py inputs/*.mp4 -o output -n realesr-animevideov3
+  # Use general model instead (compact, faster)
+  uv run python convert_to_instagram_reels.py inputs/*.mp4 -o output -n realesr-general-x4v3
 
   # Convert single file
   uv run python convert_to_instagram_reels.py video.mp4 -o output
@@ -402,15 +432,20 @@ Examples:
     parser.add_argument(
         '-n', '--model_name',
         type=str,
-        default='realesr-general-x4v3',
-        choices=['realesr-general-x4v3', 'realesr-animevideov3', 'RealESRGAN_x4plus', 'RealESRGAN_x2plus'],
-        help='Real-ESRGAN model for upscaling (default: realesr-general-x4v3 for real videos)'
+        default=DEFAULT_MODEL,
+        choices=['RealESRGAN_x4plus', 'realesr-general-x4v3', 'realesr-animevideov3', 'RealESRGAN_x2plus'],
+        help=f'Real-ESRGAN model for upscaling (default: {DEFAULT_MODEL} - best for faces per research)'
     )
     parser.add_argument(
         '--tile',
         type=int,
         default=0,
         help='Tile size for Real-ESRGAN (default: 0=no tiling for best quality, use 512+ if OOM errors occur)'
+    )
+    parser.add_argument(
+        '--blur-bg',
+        action='store_true',
+        help='For horizontal videos, use blurred-background fill instead of black letterbox bars'
     )
 
     args = parser.parse_args()
@@ -439,12 +474,20 @@ Examples:
     if not args.no_upscale:
         print(f"Upscale Model: {args.model_name}")
         tile_info = f"no tiling (best quality)" if args.tile == 0 else f"tile={args.tile}"
-        print(f"Settings: {tile_info}, fp32 precision")
+        print(f"Settings: {tile_info}, fp32 precision, always 4x (downscale with Lanczos)")
+    print(f"Horizontal videos: {'blurred-background fill' if args.blur_bg else 'black letterbox bars'}")
 
     # Process each video
     success_count = 0
     for video_file in video_files:
-        if process_video(video_file, args.output, use_upscaling=not args.no_upscale, model=args.model_name, tile_size=args.tile):
+        if process_video(
+            video_file,
+            args.output,
+            use_upscaling=not args.no_upscale,
+            model=args.model_name,
+            tile_size=args.tile,
+            blur_bg=args.blur_bg,
+        ):
             success_count += 1
 
     # Summary
